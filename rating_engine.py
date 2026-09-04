@@ -283,9 +283,10 @@ class PricingEngine:
             Z = min(1,np.sqrt(row["MCS150_MILEAGE"] / FULL_CRED))  # prior info factor
             hist_freq = row["crashes"] / row["MCS150_MILEAGE"] * self.mileage
 
-            if hist_freq > 2*baseline_freq: self.quote = False
+            freq = Z*hist_freq + (1-Z)*baseline_freq
+            if freq > 2*baseline_freq: self.quote = False
 
-            return Z*hist_freq + (1-Z)*baseline_freq
+            return freq
         
         else: return baseline_freq
 

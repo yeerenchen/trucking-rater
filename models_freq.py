@@ -3,9 +3,11 @@ import numpy as np
 import statsmodels.formula.api as smf
 import statsmodels.api as sm
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import mean_absolute_error, mean_squared_error, make_scorer
+from xgboost import XGBRegressor
 
-df_freq = pd.read_csv(r"Datasets\merged_data.csv")
+df_freq = pd.read_csv(r"Datasets\Frequency Model Data\merged_data.csv")
 df_freq = df_freq[(df_freq["MCS150_MILEAGE"] <= 500_000*df_freq["POWER_UNITS"]) &
         (df_freq["MCS150_MILEAGE"] > 1) &
         (df_freq["POWER_UNITS"] > 0) &
@@ -170,6 +172,84 @@ def fit_freq_models():
         )
 
         print(calibration_pois)
+
+    # All cargo columns
+    cargo_cols = [c for c in train.columns if c.startswith("CRGO_")]
+
+    # Convert X / blank -> 1 / 0
+    train[cargo_cols] = train[cargo_cols].eq("X").astype(int)
+    valid[cargo_cols] = valid[cargo_cols].eq("X").astype(int)
+
+    features = [
+    "POWER_UNITS",
+    "MCS150_MILEAGE",
+    *cargo_cols
+    ]
+
+    X_train = train[features]
+    X_valid = valid[features]
+
+    y_train = train["crashes"]
+    y_valid = valid["crashes"]
+
+    # XGBoost Poisson model
+    xgb = XGBRegressor(
+    objective="count:poisson",
+    random_state=20
+    )
+
+    param_grid = {
+        "n_estimators": [200, 400, 600, 800, 1000],
+        "max_depth": [2, 3, 4, 5, 6],
+        "learning_rate": [0.01, 0.03, 0.05, 0.1],
+        "min_child_weight": [1, 3, 5, 10, 20],
+        "subsample": [0.6, 0.8, 1.0],
+        "colsample_bytree": [0.6, 0.8, 1.0],
+        "gamma": [0, 0.1, 0.5, 1],
+        "reg_alpha": [0, 0.01, 0.1, 1],
+        "reg_lambda": [1, 2, 5, 10]
+    }
+
+    mae_scorer = make_scorer(
+        mean_absolute_error,
+        greater_is_better=False
+    )
+
+    search = RandomizedSearchCV(
+        estimator=xgb,
+        param_distributions=param_grid,
+        n_iter=4,
+        scoring=mae_scorer,
+        cv=5,
+        random_state=20,
+        n_jobs=-1,
+        verbose=1
+    )
+
+    search.fit(X_train, y_train)
+
+    print("Best parameters:")
+    print(search.best_params_)
+
+    print("Best CV MAE:")
+    print(-search.best_score_)
+
+    xgb_best = search.best_estimator_
+
+    valid["predicted_crashes_xgb"] = xgb_best.predict(X_valid)
+
+    mae_xgb = mean_absolute_error(
+        valid["crashes"],
+        valid["predicted_crashes_xgb"]
+    )
+
+    rmse_xgb = np.sqrt(mean_squared_error(
+        valid["crashes"],
+        valid["predicted_crashes_xgb"]
+    ))
+
+    print(f"Validation MAE:  {mae_xgb:.4f}")
+    print(f"Validation RMSE: {rmse_xgb:.4f}")
     
 
 # === run ===
