@@ -55,24 +55,26 @@ df_freq = df_freq[(df_freq["MCS150_MILEAGE"] <= 500_000*df_freq["POWER_UNITS"]) 
 # ========================================
 
 def decode_vin(vin):
-    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/{vin}"
-    
-    r = requests.get(url, params={"format": "json"})
-    r.raise_for_status()
-    
-    result = r.json()["Results"][0]
-    
-    return {
-        "VIN": vin,
-        "Make": result.get("Make"),
-        "Model": result.get("Model"),
-        "ModelYear": result.get("ModelYear"),
-        "GVWR": result.get("GVWR"),
-        "GCWR": result.get("GCWR"),
-        "CurbWeightLB": result.get("CurbWeightLB"),
-        "VehicleType": result.get("VehicleType"),
-        "BodyClass": result.get("BodyClass")
-    }
+    try:
+        url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/{vin}"
+        
+        r = requests.get(url, params={"format": "json"})
+        r.raise_for_status()
+        
+        result = r.json()["Results"][0]
+        
+        return {
+            "VIN": vin,
+            "Make": result.get("Make"),
+            "Model": result.get("Model"),
+            "ModelYear": result.get("ModelYear"),
+            "GVWR": result.get("GVWR"),
+            "GCWR": result.get("GCWR"),
+            "CurbWeightLB": result.get("CurbWeightLB"),
+            "VehicleType": result.get("VehicleType"),
+            "BodyClass": result.get("BodyClass")
+        }
+    except Exception as e: print("Invalid VIN")
 
 def parse_gvwr(x):
     if not x:
@@ -203,7 +205,7 @@ class PricingEngine:
         self.hazmat = hazmat
         if hazmat not in ["A","B","C"]: raise ValueError("Invalid Carrier Operating Code")
         self.state = state
-        if state not in state_to_region: raise ValueError("Invalid State Abbreviation")
+        if (state!="") and (state not in state_to_region): raise ValueError("Invalid State Abbreviation")
 
         self.trucks = len(pu)
         self.weights = self.get_powerunit_weight()
@@ -305,13 +307,23 @@ class PricingEngine:
         return prem if self.quote else "Decline"
     
 # hazmat input: A - Interstate, B - Intrastate+Hazmat, C - Intrastate+NoHazmat
-c1 = PricingEngine(285841,3,["1FVACWDB2GH123456"],500,"A","OK")
-c2 = PricingEngine(894785,5,["4V4NC9EH0JN886331","1XKYD49X6LJ956830","3AKJHHDR0PSNY9089"], 30, "B")
-c3 = PricingEngine(2833560,2,["4V4NC9EH0JN886331","1XKYD49X6LJ956830","3AKJHHDR0PSNY9089"], 50, "B")
-c4 = PricingEngine(2835739,10,["1XPHD49X1AD796233","1XPHD49X1AD796233","1XPHD49X1AD796233","1XPHD49X1AD796233","1XPHD49X1AD796233"], 100, "C", "AL")
-c5 = PricingEngine(285841,3,["1FVACWDB2GH123456"],500,"A","KY")
-c6 = PricingEngine(285841,3,["1FVACWDB2GH123456"],500,"A","VT")
-c7 = PricingEngine(285841,3,["1FVACWDB2GH123456"],300,"A")
+submissions = [
+    (285841, 3, ["1FVACWDB2GH123456"], 500, "A", "OK"),
+    (894785, 5, ["4V4NC9EH0JN886331", "1XKYD49X6LJ956830", "3AKJHHDR0PSNY9089"], 30, "B"),
+    (2833560, 2, ["4V4NC9EH0JN886331", "1XKYD49X6LJ956830", "3AKJHHDR0PSNY9089"], 50, "B"),
+    (2835739, 10, ["1XPHD49X1AD796233"] * 5, 100, "C", "AL"),
+    (285841, 3, ["1FVACWDB2GH123456"], 500, "A", "KY"),
+    (285841, 3, ["1FVACWDB2GH123456"], 500, "A", "VT"),
+    (285841, 3, ["1FVACWDB2GH123456"], 300, "A"),
+    (13481341350853, 3, ["3WKAD49X0DF845021"], 300, "A"),
+    (285841, 3, ["AAAAAAAAAAAAAAAAA"], 300, "A"),
+]
 
-cs = [c1,c2,c3,c4,c5,c6,c7]
-for c in cs: print(c.get_prem())
+for args in submissions:
+    try:
+        c = PricingEngine(*args)
+        print(c.get_prem())
+
+    except Exception as e:
+        print(f"Skipped submission: {e}")
+        continue
